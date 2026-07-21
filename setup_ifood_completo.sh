@@ -226,7 +226,7 @@ EOF
 
 # Instala dependências npm
 cd "$INSTALL_DIR"
-npm install node-printer express --save > /dev/null 2>&1
+npm install node-printer express cors --save > /dev/null 2>&1
 echo "      OK"
 
 # -------------------------------------------------------

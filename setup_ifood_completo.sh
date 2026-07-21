@@ -112,14 +112,14 @@ echo "      Extraindo arquivos..."
 rm -rf /tmp/ifood_exe /tmp/ifood_exe2 /tmp/ifood_asar
 mkdir -p /tmp/ifood_exe
 
-# Primeira extração do .exe
-7z x /tmp/ifood_printer.exe -o/tmp/ifood_exe/ -y > /dev/null 2>&1
+# Primeira extração do .exe (|| true evita que set -e aborte em avisos do 7z)
+7z x /tmp/ifood_printer.exe -o/tmp/ifood_exe/ -y > /dev/null 2>&1 || true
 
 # Electron-builder NSIS embute um .7z aninhado — extrai se existir
 NESTED_7Z=$(find /tmp/ifood_exe -name "*.7z" 2>/dev/null | head -1)
 if [ -n "$NESTED_7Z" ]; then
     mkdir -p /tmp/ifood_exe2
-    7z x "$NESTED_7Z" -o/tmp/ifood_exe2/ -y > /dev/null 2>&1
+    7z x "$NESTED_7Z" -o/tmp/ifood_exe2/ -y > /dev/null 2>&1 || true
     SEARCH_DIR="/tmp/ifood_exe2"
 else
     SEARCH_DIR="/tmp/ifood_exe"

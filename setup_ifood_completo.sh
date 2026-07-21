@@ -339,7 +339,7 @@ else
 ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="04b8", ATTR{idProduct}=="0e27", RUN+="/bin/bash /home/pi/ifood-server/on-printer-connected.sh"
 EOF
     sudo cp /tmp/99-ifood-printer.rules "$UDEV_RULE"
-    sudo udevadm control --reload-rules
+    sudo udevadm control --reload-rules 2>/dev/null || sudo systemctl restart udev 2>/dev/null || true
     echo "      Regra udev — criada para 04b8:0e27"
 fi
 

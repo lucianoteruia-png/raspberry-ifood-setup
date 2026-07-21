@@ -109,12 +109,32 @@ wget -q "$IFOOD_EXE_URL" -O /tmp/ifood_printer.exe
 echo "      Download concluído"
 
 echo "      Extraindo arquivos..."
-rm -rf /tmp/ifood_exe /tmp/ifood_asar
+rm -rf /tmp/ifood_exe /tmp/ifood_exe2 /tmp/ifood_asar
+mkdir -p /tmp/ifood_exe
+
+# Primeira extração do .exe
 7z x /tmp/ifood_printer.exe -o/tmp/ifood_exe/ -y > /dev/null 2>&1
 
+# Electron-builder NSIS embute um .7z aninhado — extrai se existir
+NESTED_7Z=$(find /tmp/ifood_exe -name "*.7z" 2>/dev/null | head -1)
+if [ -n "$NESTED_7Z" ]; then
+    mkdir -p /tmp/ifood_exe2
+    7z x "$NESTED_7Z" -o/tmp/ifood_exe2/ -y > /dev/null 2>&1
+    SEARCH_DIR="/tmp/ifood_exe2"
+else
+    SEARCH_DIR="/tmp/ifood_exe"
+fi
+
+# Localiza o app.asar
+ASAR_FILE=$(find "$SEARCH_DIR" -name "app.asar" 2>/dev/null | head -1)
+if [ -z "$ASAR_FILE" ]; then
+    echo "ERRO: app.asar não encontrado no instalador"
+    exit 1
+fi
+
 # Extrai app.asar via Python (sem dependências externas)
-python3 << 'PYEOF'
-import struct, json, os, glob, sys
+python3 << PYEOF
+import struct, json, os, sys
 
 def extract_asar(asar_file, output_dir):
     with open(asar_file, 'rb') as f:
@@ -139,11 +159,7 @@ def extract_asar(asar_file, output_dir):
                         out.write(f.read(size))
         extract(header, output_dir)
 
-asar_files = glob.glob('/tmp/ifood_exe/**/app.asar', recursive=True)
-if not asar_files:
-    print("ERRO: app.asar não encontrado no instalador")
-    sys.exit(1)
-extract_asar(asar_files[0], '/tmp/ifood_asar')
+extract_asar("$ASAR_FILE", '/tmp/ifood_asar')
 print("      Extração concluída")
 PYEOF
 
@@ -153,20 +169,22 @@ PYEOF
 echo "[3/6] Configurando servidor local..."
 mkdir -p "$INSTALL_DIR"
 
-# thermal.js — patcha para usar printer-shim no lugar do módulo Windows
-if [ ! -f /tmp/ifood_asar/node_modules/@ifood/thermal-printer/dist/main.js ]; then
+# thermal.js — busca em qualquer caminho dentro do asar extraído
+THERMAL_SRC=$(find /tmp/ifood_asar -path "*thermal-printer*/dist/main.js" 2>/dev/null | head -1)
+if [ -z "$THERMAL_SRC" ]; then
     echo "ERRO: thermal-printer não encontrado no asar"
     exit 1
 fi
-cp /tmp/ifood_asar/node_modules/@ifood/thermal-printer/dist/main.js "$INSTALL_DIR/thermal.js"
+cp "$THERMAL_SRC" "$INSTALL_DIR/thermal.js"
 sed -i 's|require("@niick555/node-printer")|require("./printer-shim")|g' "$INSTALL_DIR/thermal.js"
 
-# server.js — patchea imports e adiciona chamada de inicialização
-if [ ! -f /tmp/ifood_asar/dist-electron/electron/local-server/index.js ]; then
+# server.js — busca em qualquer caminho dentro do asar extraído
+SERVER_SRC=$(find /tmp/ifood_asar -path "*local-server*/index.js" 2>/dev/null | head -1)
+if [ -z "$SERVER_SRC" ]; then
     echo "ERRO: local-server/index.js não encontrado no asar"
     exit 1
 fi
-cp /tmp/ifood_asar/dist-electron/electron/local-server/index.js "$INSTALL_DIR/server.js"
+cp "$SERVER_SRC" "$INSTALL_DIR/server.js"
 sed -i 's|require("@ifood/thermal-printer")|require("./thermal")|g' "$INSTALL_DIR/server.js"
 sed -i 's|require("../../../package.json")|require("./package.json")|g' "$INSTALL_DIR/server.js"
 echo 'startLocalPrinterServer();' >> "$INSTALL_DIR/server.js"

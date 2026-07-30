@@ -1,0 +1,18 @@
+#!/bin/bash
+# setup_zebra.sh
+# Configura a Raspberry Pi como servidor de impressão Zebra (Kdabra)
+#
+# Uso:
+#   bash <(curl -fsSL https://raw.githubusercontent.com/lucianoteruia-png/raspberry-ifood-setup/main/auto_setup_impressora/setup_zebra.sh)
+
+GITHUB_RAW="https://raw.githubusercontent.com/lucianoteruia-png/raspberry-ifood-setup/main/auto_setup_impressora"
+INSTALL_PATH="/opt/auto_setup_impressora.py"
+
+echo ""
+echo "Baixando script..."
+curl -fsSL "$GITHUB_RAW/auto_setup_impressora.py" -o "$INSTALL_PATH" \
+    || { echo "ERRO: Falha ao baixar. Verifique a conexão."; exit 1; }
+
+chmod +x "$INSTALL_PATH"
+echo "Iniciando setup..."
+sudo python3 "$INSTALL_PATH"

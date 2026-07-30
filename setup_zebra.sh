@@ -5,7 +5,7 @@
 # Uso:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/lucianoteruia-png/raspberry-ifood-setup/main/auto_setup_impressora/setup_zebra.sh)
 
-GITHUB_RAW="https://raw.githubusercontent.com/lucianoteruia-png/raspberry-ifood-setup/main/auto_setup_impressora"
+GITHUB_RAW="https://raw.githubusercontent.com/lucianoteruia-png/raspberry-ifood-setup/main"
 INSTALL_PATH="/opt/auto_setup_impressora.py"
 
 echo ""

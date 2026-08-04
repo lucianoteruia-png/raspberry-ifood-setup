@@ -255,8 +255,10 @@ def get_mac_address():
 
 def buscar_config_firestore(mac_address):
     try:
+        creds_fix = dict(FIREBASE_CREDENTIALS)
+        creds_fix['private_key'] = creds_fix['private_key'].replace('\\n', '\n')
         creds = service_account.Credentials.from_service_account_info(
-            FIREBASE_CREDENTIALS,
+            creds_fix,
             scopes=["https://www.googleapis.com/auth/datastore"]
         )
         auth_req = google.auth.transport.requests.Request()

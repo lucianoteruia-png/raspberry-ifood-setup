@@ -9,6 +9,10 @@ GITHUB_RAW="https://raw.githubusercontent.com/lucianoteruia-png/raspberry-ifood-
 INSTALL_PATH="/opt/auto_setup_impressora.py"
 
 echo ""
+echo "Instalando dependências Python..."
+pip3 install google-auth requests --break-system-packages -q \
+    || pip3 install google-auth requests -q
+
 echo "Baixando script..."
 curl -fsSL "$GITHUB_RAW/auto_setup_impressora.py" -o "$INSTALL_PATH" \
     || { echo "ERRO: Falha ao baixar. Verifique a conexão."; exit 1; }

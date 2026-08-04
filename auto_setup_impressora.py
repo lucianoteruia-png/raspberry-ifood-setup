@@ -70,6 +70,19 @@ MAX_RETRIES          = 10
 NOME_PADRAO          = "Impressora_Sem_Nome"
 FC_PADRAO            = 2
 
+FC_NOMES = {
+    1: "FC0 - Barra Funda", 2: "FC1 - Osasco", 3: "FC2 - Ribeirão Preto",
+    4: "FC1 - Lojinha", 5: "FC2 - Lojinha", 6: "LJ01 - Pamplona",
+    7: "FC3 - São Paulo", 8: "LJ02 - Moema", 9: "LJ03 - Pinheiros",
+    10: "LJ04 - Higienópolis", 11: "LJ05 - Vila Olimpia", 12: "LJ06 - Alto de Pinheiros",
+    13: "LJ07 - Barra Funda", 14: "LJ08 - Morumbi", 15: "LJ09 - Vila Mariana",
+    16: "LJ10 - Brooklin", 17: "FC3 - Lojinha", 18: "LJ11 - Campinas",
+    19: "LJ12 - Tatuapé", 20: "LJ13 - São Caetano", 21: "LJ15 - Vila Guilherme",
+    22: "LJ16 - Consolação", 23: "LJ17 - Ribeirão Preto", 24: "LJ18 - Mooca",
+    25: "FC4 - Brasilia", 26: "FC5 - Curitiba", 27: "LJ19 - PR - Republica",
+    28: "LJ20 - PR - Rodovia", 29: "LJ21 - PR - Stresser"
+}
+
 SERVICE_NAME = "auto-setup-impressora"
 SERVICE_FILE = f"/etc/systemd/system/{SERVICE_NAME}.service"
 
@@ -180,12 +193,27 @@ WantedBy=multi-user.target
     except Exception:
         status = "desconhecido"
 
+    mac = get_mac_address() or "não identificado"
+    config = buscar_config_firestore(mac) if mac != "não identificado" else None
+    nome = config["nome_mesa"] if config else "não encontrado"
+    fc   = config["fulfillment_center_id"] if config else "-"
+    nao_cadastrado = (nome == NOME_PADRAO)
+
     print("")
     print("╔══════════════════════════════════════════╗")
     print("║          ✓  Setup concluído!             ║")
     print("╚══════════════════════════════════════════╝")
     print("")
-    print(f"  Serviço: {status}")
+    print(f"  Serviço:     {status}")
+    print(f"  MAC address: {mac}")
+    print(f"  Nome:        {nome}")
+    print(f"  FC:          {FC_NOMES.get(fc, f'ID {fc}') if isinstance(fc, int) else fc}")
+    if nao_cadastrado:
+        print("")
+        print("  ⚠  MAC não encontrado no Firebase!")
+        print(f"     Impressora configurada por padrão como {FC_NOMES[FC_PADRAO]}.")
+        print("     Cadastre esse MAC com o nome e FC corretos")
+        print("     antes de usar a impressora.")
     print("")
     print("  Comportamento automático:")
     print("    • Desconectada → checa a cada 5s")
@@ -372,19 +400,37 @@ def desregistrar_printer_server(nome_mesa, fc_id, kdabra_url):
     return False
 
 
-def loop_monitoramento(nome_mesa, fc_id, kdabra_url):
+def loop_monitoramento(mac, nome_mesa, fc_id, kdabra_url):
     log(f"Monitoramento iniciado "
         f"(offline→{CHECK_OFFLINE_SEG}s | online→{CHECK_ONLINE_SEG//60}min | "
         f"desregistra após {TEMPO_OFFLINE_DESREGISTRAR//3600}h)")
 
     printer_server_ativo = True
     offline_desde = None
+    ultima_verificacao_firebase = time.time()
 
     while True:
         intervalo = CHECK_ONLINE_SEG if printer_server_ativo else CHECK_OFFLINE_SEG
         time.sleep(intervalo)
 
         log("--- Verificação ---")
+
+        # Re-lê Firebase a cada 30 minutos para pegar mudanças de nome/FC
+        if time.time() - ultima_verificacao_firebase >= CHECK_ONLINE_SEG:
+            config_novo = buscar_config_firestore(mac)
+            ultima_verificacao_firebase = time.time()
+            if (config_novo["nome_mesa"] != nome_mesa or
+                    config_novo["fulfillment_center_id"] != fc_id or
+                    config_novo["kdabra_url"] != kdabra_url):
+                log(f"Configuração mudou no Firebase! Atualizando...")
+                log(f"  Antes: {nome_mesa} / FC {fc_id}")
+                nome_mesa  = config_novo["nome_mesa"]
+                fc_id      = config_novo["fulfillment_center_id"]
+                kdabra_url = config_novo["kdabra_url"]
+                log(f"  Agora: {nome_mesa} / FC {fc_id} ({FC_NOMES.get(fc_id, '')})")
+                if printer_server_ativo:
+                    aplicar_config(nome_mesa, fc_id, kdabra_url)
+
         conectada = impressora_fisicamente_conectada()
 
         if conectada:
@@ -467,7 +513,7 @@ def main():
         aplicar_config(nome_mesa, fc_id, kdabra_url)
 
     log("Setup inicial concluído. Entrando em monitoramento contínuo...")
-    loop_monitoramento(nome_mesa, fc_id, kdabra_url)
+    loop_monitoramento(mac, nome_mesa, fc_id, kdabra_url)
 
 
 if __name__ == "__main__":

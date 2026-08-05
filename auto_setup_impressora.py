@@ -319,18 +319,21 @@ def cadastrar_impressora_cups(uri, nome="ZD220"):
 
 
 def aguardar_printer_server():
+    """Aguarda o app printer_server subir (qualquer resposta HTTP na porta 2525)."""
     url = f"http://localhost:{PRINTER_SERVER_PORT}/health"
     log(f"Aguardando printer_server ({url})...")
     for i in range(1, MAX_RETRIES + 1):
         try:
-            if requests.get(url, timeout=5).status_code == 200:
-                log(f"printer_server OK (tentativa {i})")
-                return True
+            requests.get(url, timeout=5)  # qualquer resposta = app está no ar
+            log(f"printer_server app OK (tentativa {i})")
+            return True
+        except requests.exceptions.ConnectionError:
+            pass  # app ainda não subiu
         except Exception:
-            pass
+            return True  # outra exceção = app respondeu de alguma forma
         log(f"  Tentativa {i}/{MAX_RETRIES} — {WAIT_BETWEEN_RETRIES}s...")
         time.sleep(WAIT_BETWEEN_RETRIES)
-    log("ERRO: printer_server não respondeu.")
+    log("ERRO: printer_server não iniciou.")
     return False
 
 
@@ -372,12 +375,11 @@ def desregistrar_printer_server(nome_mesa, fc_id, kdabra_url):
     return False
 
 
-def loop_monitoramento(mac, nome_mesa, fc_id, kdabra_url):
+def loop_monitoramento(mac, nome_mesa, fc_id, kdabra_url, printer_server_ativo=True):
     log(f"Monitoramento iniciado "
         f"(offline→{CHECK_OFFLINE_SEG}s | online→{CHECK_ONLINE_SEG//60}min | "
         f"desregistra após {TEMPO_OFFLINE_DESREGISTRAR//3600}h)")
 
-    printer_server_ativo = True
     offline_desde = None
     ultima_verificacao_firebase = time.time()
 
@@ -470,22 +472,27 @@ def main():
         log("ERRO: printer_server indisponível.")
         return
 
-    config_atual = verificar_config_atual()
-    if config_atual:
-        ja_ok = (
-            config_atual.get("device_name") == nome_mesa and
-            config_atual.get("fulfillment_center_id") == fc_id and
-            config_atual.get("printer_server") is True
-        )
-        if ja_ok:
-            log("Configuração já correta no Kdabra.")
+    impressora_ok = impressora_fisicamente_conectada()
+
+    if impressora_ok:
+        config_atual = verificar_config_atual()
+        if config_atual:
+            ja_ok = (
+                config_atual.get("device_name") == nome_mesa and
+                config_atual.get("fulfillment_center_id") == fc_id and
+                config_atual.get("printer_server") is True
+            )
+            if ja_ok:
+                log("Configuração já correta no Kdabra.")
+            else:
+                aplicar_config(nome_mesa, fc_id, kdabra_url)
         else:
             aplicar_config(nome_mesa, fc_id, kdabra_url)
     else:
-        aplicar_config(nome_mesa, fc_id, kdabra_url)
+        log("Impressora não conectada. Monitoramento detectará ao conectar (checa a cada 5s).")
 
     log("Setup inicial concluído. Entrando em monitoramento contínuo...")
-    loop_monitoramento(mac, nome_mesa, fc_id, kdabra_url)
+    loop_monitoramento(mac, nome_mesa, fc_id, kdabra_url, printer_server_ativo=impressora_ok)
 
 
 if __name__ == "__main__":

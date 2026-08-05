@@ -1,0 +1,120 @@
+==============================================================================
+  PAINEL DE RASPBERRY — PASSO A PASSO DO AGENTE (rpi-agent.py)
+==============================================================================
+  O painel monitora cada Pi chamando dois endpoints:
+      GET http://IP:PORTA/health   -> diz se esta online
+      GET http://IP:PORTA/devices  -> lista o que esta conectado
+  O agente (rpi-agent.py) roda na porta 2526 e responde esses dois endpoints.
+  E somente leitura: nao imprime e nao altera nada no Pi.
+
+  Faca tudo em UM Pi primeiro. Depois repita nos outros.
+==============================================================================
+
+
+------------------------------------------------------------------------------
+  1) DESCOBRIR IP E MAC (para cadastrar no painel)
+------------------------------------------------------------------------------
+
+    hostname -I
+    ip -brief link show
+
+  - hostname -I  -> o IP da rede (vai no campo "Host / IP" do painel)
+  - ip link      -> o MAC de cada interface
+                    (eth0 = cabo de rede, wlan0 = wifi)
+
+  Anote o IP e o MAC da interface que o Pi realmente usa.
+
+
+------------------------------------------------------------------------------
+  2) COLOCAR O rpi-agent.py NO PI
+------------------------------------------------------------------------------
+
+  Opcao A - copiar do seu PC para o Pi (troque IP_DO_PI):
+
+    scp rpi-agent.py pi@IP_DO_PI:/home/pi/
+
+  Opcao B - criar direto no terminal do Pi:
+
+    nano /home/pi/rpi-agent.py
+    (cole o conteudo do arquivo, salve com Ctrl+O / Enter, saia com Ctrl+X)
+
+
+------------------------------------------------------------------------------
+  3) TESTAR NA MAO
+------------------------------------------------------------------------------
+
+  No terminal do Pi:
+
+    python3 /home/pi/rpi-agent.py
+
+  Em OUTRO terminal do Pi:
+
+    curl http://localhost:2526/health
+    curl http://localhost:2526/devices
+
+  - /health  deve responder {"status":"ok", ...}
+  - /devices deve listar impressoras, USBs, rede e o print server
+
+  Se aparecer certo, volte no primeiro terminal e pare com Ctrl+C.
+  Se o lpstat reclamar, confira o CUPS:  lpstat -p -d
+
+
+------------------------------------------------------------------------------
+  4) DEIXAR RODANDO SOZINHO NO BOOT (systemd)
+------------------------------------------------------------------------------
+
+  Cole o bloco abaixo inteiro (cria o servico de uma vez):
+
+    sudo tee /etc/systemd/system/rpi-agent.service > /dev/null << 'EOF'
+    [Unit]
+    Description=Agente do Painel de Raspberry
+    After=network-online.target cups.service
+
+    [Service]
+    ExecStart=/usr/bin/python3 /home/pi/rpi-agent.py
+    Restart=always
+    User=pi
+
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+
+  Depois ative:
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable --now rpi-agent
+    sudo systemctl status rpi-agent      (deve mostrar "active (running)")
+
+
+------------------------------------------------------------------------------
+  5) CADASTRAR NO PAINEL
+------------------------------------------------------------------------------
+
+  No painel -> botao "Adicionar Raspberry":
+
+    MAC address     -> o MAC do passo 1
+    Nome            -> ex.: Pi-Etiquetas-FC1
+    Host / IP       -> o IP do passo 1
+    Porta do agente -> 2526   (TROQUE o 2525 que vem preenchido!)
+    Local / FC      -> ex.: FC3 - Expedicao
+
+  O card deve ficar "Online" e listar os perifericos.
+  A verificacao se repete sozinha a cada 30 segundos.
+
+
+==============================================================================
+  OBSERVACOES
+==============================================================================
+  - O agente roda na 2526 de proposito, para nao conflitar com o print
+    server na 2525. Ele ainda testa a 2525 e mostra "Print Server" como
+    um item no card - assim voce ve num lugar so se a impressao esta de pe.
+
+  - Se preferir manter tudo na porta 2525 (adicionar o /devices dentro do
+    proprio print server em vez de subir o agente), e possivel - basta
+    adaptar o print server existente e, no painel, deixar a porta 2525.
+
+  - Comandos uteis de manutencao:
+        sudo systemctl restart rpi-agent     (reiniciar)
+        sudo systemctl stop rpi-agent        (parar)
+        journalctl -u rpi-agent -n 50        (ver os ultimos logs)
+==============================================================================

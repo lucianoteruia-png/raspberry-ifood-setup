@@ -410,6 +410,14 @@ def loop_monitoramento(mac, nome_mesa, fc_id, kdabra_url, printer_server_ativo=T
         if conectada:
             if not printer_server_ativo:
                 log("Impressora reconectada. Re-registrando...")
+                # Relê Firebase para garantir nome/FC corretos
+                config_fresco = buscar_config_firestore(mac)
+                nome_mesa  = config_fresco["nome_mesa"]
+                fc_id      = config_fresco["fulfillment_center_id"]
+                kdabra_url = config_fresco["kdabra_url"]
+                ultima_verificacao_firebase = time.time()
+                log(f"Config: {nome_mesa} / {FC_NOMES.get(fc_id, fc_id)}")
+
                 uri = detectar_zebra_usb()
                 if uri and not impressora_cadastrada_cups("ZD220"):
                     cadastrar_impressora_cups(uri, "ZD220")

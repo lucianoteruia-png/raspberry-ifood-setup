@@ -68,6 +68,7 @@ FC_NOMES = {
 
 SERVICE_NAME = "auto-setup-impressora"
 SERVICE_FILE = f"/etc/systemd/system/{SERVICE_NAME}.service"
+CONFIG_CACHE  = "/opt/impressora_config.json"  # cache local do último nome/FC
 
 # Intervalos de monitoramento
 CHECK_OFFLINE_SEG  = 5           # checa a cada 5s quando impressora está desconectada
@@ -236,6 +237,30 @@ def get_mac_address():
     return None
 
 
+def salvar_cache(config):
+    """Salva a configuração em arquivo local para uso offline."""
+    try:
+        import json
+        with open(CONFIG_CACHE, "w") as f:
+            json.dump(config, f)
+    except Exception as e:
+        log(f"AVISO: Não foi possível salvar cache: {e}")
+
+
+def carregar_cache():
+    """Carrega a última configuração salva localmente."""
+    try:
+        import json
+        if os.path.exists(CONFIG_CACHE):
+            with open(CONFIG_CACHE) as f:
+                config = json.load(f)
+            log(f"Cache local carregado: {config}")
+            return config
+    except Exception as e:
+        log(f"AVISO: Não foi possível ler cache: {e}")
+    return None
+
+
 def buscar_config_firestore(mac_address):
     try:
         url = (
@@ -253,6 +278,7 @@ def buscar_config_firestore(mac_address):
                 "kdabra_url": fields.get("kdabra_url", {}).get("stringValue", KDABRA_URL_PADRAO),
             }
             log(f"Firestore: {data}")
+            salvar_cache(data)  # salva para uso offline futuro
             return data
         elif response.status_code == 404:
             log(f"AVISO: MAC {mac_address} não encontrado no Firestore. Usando padrão.")
@@ -261,6 +287,11 @@ def buscar_config_firestore(mac_address):
 
     except Exception as e:
         log(f"ERRO Firestore: {e}")
+
+    # Tenta usar cache local antes de usar padrão
+    cache = carregar_cache()
+    if cache:
+        return cache
 
     return {"nome_mesa": NOME_PADRAO, "fulfillment_center_id": FC_PADRAO, "kdabra_url": KDABRA_URL_PADRAO}
 
@@ -462,9 +493,35 @@ def main():
         log("ERRO: MAC address não identificado.")
         return
 
-    config = buscar_config_firestore(mac)
-    nome_mesa = config["nome_mesa"]
-    fc_id     = config["fulfillment_center_id"]
+    # Retry progressivo para buscar config do Firebase
+    # 30s × 4 tentativas (2min) → 60s × 5 tentativas (5min) → ciclo normal de 30min
+    config = None
+    usando_cache = False
+    tentativas = [(30, 4), (60, 5)]  # (intervalo, quantidade)
+
+    for intervalo, qtd in tentativas:
+        if config and config["nome_mesa"] != NOME_PADRAO:
+            break
+        for i in range(qtd):
+            config = buscar_config_firestore(mac)
+            if config["nome_mesa"] != NOME_PADRAO:
+                log(f"Config obtida do Firebase: {config['nome_mesa']}")
+                break
+            log(f"Firebase indisponível ou MAC sem cadastro. Tentando em {intervalo}s...")
+            time.sleep(intervalo)
+
+    if not config or config["nome_mesa"] == NOME_PADRAO:
+        cache = carregar_cache()
+        if cache:
+            config = cache
+            usando_cache = True
+            log("Usando configuração do cache local.")
+        else:
+            config = {"nome_mesa": NOME_PADRAO, "fulfillment_center_id": FC_PADRAO, "kdabra_url": KDABRA_URL_PADRAO}
+            log("AVISO: Usando configuração padrão. Cadastre o MAC no Firebase.")
+
+    nome_mesa  = config["nome_mesa"]
+    fc_id      = config["fulfillment_center_id"]
     kdabra_url = config["kdabra_url"]
 
     if not impressora_cadastrada_cups("ZD220"):

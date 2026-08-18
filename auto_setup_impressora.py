@@ -97,6 +97,53 @@ def executar(cmd, descricao=""):
         return False
 
 
+def configurar_chromium_impressora_padrao(nome_fila="ZD220"):
+    """
+    Configura a impressora Zebra como padrão no Chromium via política de sistema.
+    Funciona sem precisar abrir o Chromium antes e persiste para todos os usuários.
+    """
+    import json
+
+    policy_content = {"DefaultPrinterSelection": f'{{"idPattern":"{nome_fila}"}}'}
+
+    # Cria política nos dois caminhos possíveis (varia com a versão do Raspberry Pi OS)
+    policy_dirs = [
+        "/etc/chromium/policies/managed",
+        "/etc/chromium-browser/policies/managed",
+    ]
+
+    configurado = False
+    for policy_dir in policy_dirs:
+        try:
+            os.makedirs(policy_dir, exist_ok=True)
+            policy_file = os.path.join(policy_dir, "impressora_padrao.json")
+            with open(policy_file, "w") as f:
+                json.dump(policy_content, f, indent=2)
+            print(f"  ✓ Policy criada: {policy_file}")
+            configurado = True
+        except Exception as e:
+            print(f"  ⚠ Não foi possível criar policy em {policy_dir}: {e}")
+
+    # Se o Chromium já foi aberto antes, atualiza o Preferences diretamente também
+    prefs_path = "/home/pi/.config/chromium/Default/Preferences"
+    if os.path.exists(prefs_path):
+        try:
+            with open(prefs_path, "r") as f:
+                prefs = json.load(f)
+            prefs.setdefault("printing", {})["default_destination_selection_rules"] = (
+                f'{{"idPattern":"{nome_fila}"}}'
+            )
+            with open(prefs_path, "w") as f:
+                json.dump(prefs, f, separators=(",", ":"))
+            subprocess.run(["chown", "pi:pi", prefs_path], capture_output=True)
+            print("  ✓ Preferences do Chromium atualizadas")
+            configurado = True
+        except Exception as e:
+            print(f"  ⚠ Não foi possível editar Preferences: {e}")
+
+    return configurado
+
+
 def fazer_setup():
     """
     Instala dependências, cria o serviço systemd e o inicia.
@@ -114,7 +161,7 @@ def fazer_setup():
     print("")
 
     # 1. Dependências do sistema
-    print("[1/4] Instalando dependências...")
+    print("[1/5] Instalando dependências...")
     executar(["apt-get", "update", "-qq"], "apt-get update")
     executar(["apt-get", "install", "-y", "cups", "cups-bsd", "cups-client", "-qq"], "apt-get install cups")
     executar(["systemctl", "enable", "cups", "--quiet"], "enable cups")
@@ -130,7 +177,7 @@ def fazer_setup():
     print("  ✓ Dependências Python instaladas")
 
     # 3. Serviço systemd
-    print("[2/4] Criando serviço systemd...")
+    print("[2/5] Criando serviço systemd...")
     service_content = f"""[Unit]
 Description=Auto Setup Impressora Zebra - Kdabra
 After=network.target cups.service
@@ -154,7 +201,7 @@ WantedBy=multi-user.target
     print(f"  ✓ Serviço {SERVICE_NAME} criado e habilitado no boot")
 
     # 4. Detectar e cadastrar Zebra no CUPS agora
-    print("[3/4] Detectando impressora Zebra...")
+    print("[3/5] Detectando impressora Zebra...")
     time.sleep(2)
     uri = detectar_zebra_usb()
     if uri:
@@ -163,8 +210,12 @@ WantedBy=multi-user.target
     else:
         print("  ⚠ Nenhuma Zebra detectada agora. O monitoramento cadastrará ao conectar.")
 
-    # 5. Iniciar serviço
-    print("[4/4] Iniciando serviço...")
+    # 5. Configurar impressora padrão no Chromium
+    print("[4/5] Configurando impressora padrão no Chromium...")
+    configurar_chromium_impressora_padrao("ZD220")
+
+    # 6. Iniciar serviço
+    print("[5/5] Iniciando serviço...")
     executar(["systemctl", "start", SERVICE_NAME], "start service")
     time.sleep(3)
 

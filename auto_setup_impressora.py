@@ -238,8 +238,29 @@ WantedBy=multi-user.target
     print("[4/5] Configurando impressora padrão no Chromium...")
     configurar_chromium_impressora_padrao("ZD220_Print")
 
-    # 6. Iniciar serviço
-    print("[5/5] Iniciando serviço...")
+    # 6. Aquecer cache de impressoras do Chromium
+    # Abre o Chromium brevemente para que ele enumere as impressoras do CUPS.
+    # Isso garante que ZD220_Print já esteja no cache quando o usuário abrir
+    # o print dialog pela primeira vez, evitando o fallback para "Save as PDF".
+    print("[5/5] Aquecendo cache de impressoras no Chromium...")
+    try:
+        env_display = {**os.environ, "DISPLAY": ":0", "XAUTHORITY": "/home/pi/.Xauthority"}
+        proc = subprocess.Popen(
+            ["sudo", "-u", "pi", "chromium",
+             "--window-position=-9999,-9999", "--window-size=1,1",
+             "--noerrdialogs", "--no-first-run"],
+            env=env_display,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        time.sleep(8)  # aguarda enumeração de impressoras
+        subprocess.run(["pkill", "-u", "pi", "chromium"], capture_output=True)
+        print("  ✓ Cache de impressoras configurado")
+    except Exception as e:
+        print(f"  ⚠ Não foi possível aquecer cache do Chromium: {e}")
+
+    # 7. Iniciar serviço
+    print("[6/6] Iniciando serviço...")
     executar(["systemctl", "start", SERVICE_NAME], "start service")
     time.sleep(3)
 

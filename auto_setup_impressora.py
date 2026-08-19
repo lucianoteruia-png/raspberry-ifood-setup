@@ -141,6 +141,29 @@ def configurar_chromium_impressora_padrao(nome_fila="ZD220"):
         except Exception as e:
             print(f"  ⚠ Não foi possível editar Preferences: {e}")
 
+    # Define a impressora padrão do CUPS para o usuário pi
+    # O Chromium respeita essa configuração e abre o print dialog já com a impressora selecionada
+    try:
+        cups_dir = "/home/pi/.cups"
+        cups_file = os.path.join(cups_dir, "lpoptions")
+        os.makedirs(cups_dir, exist_ok=True)
+
+        # Preserva outras opções existentes, apenas atualiza/insere a linha Default
+        linhas_existentes = []
+        if os.path.exists(cups_file):
+            with open(cups_file) as f:
+                linhas_existentes = [l for l in f.readlines() if not l.startswith("Default ")]
+
+        with open(cups_file, "w") as f:
+            f.write(f"Default {nome_fila}\n")
+            f.writelines(linhas_existentes)
+
+        subprocess.run(["chown", "-R", "pi:pi", cups_dir], capture_output=True)
+        print(f"  ✓ Impressora padrão CUPS definida para usuário pi: {nome_fila}")
+        configurado = True
+    except Exception as e:
+        print(f"  ⚠ Não foi possível definir impressora padrão CUPS: {e}")
+
     return configurado
 
 
@@ -207,12 +230,13 @@ WantedBy=multi-user.target
     if uri:
         print(f"  ✓ Zebra detectada: {uri}")
         cadastrar_impressora_cups(uri)
+        cadastrar_impressora_cups_print(uri)
     else:
         print("  ⚠ Nenhuma Zebra detectada agora. O monitoramento cadastrará ao conectar.")
 
     # 5. Configurar impressora padrão no Chromium
     print("[4/5] Configurando impressora padrão no Chromium...")
-    configurar_chromium_impressora_padrao("ZD220")
+    configurar_chromium_impressora_padrao("ZD220_Print")
 
     # 6. Iniciar serviço
     print("[5/5] Iniciando serviço...")
@@ -400,6 +424,26 @@ def cadastrar_impressora_cups(uri, nome="ZD220"):
     time.sleep(3)
 
 
+def cadastrar_impressora_cups_print(uri, nome="ZD220_Print"):
+    """
+    Cria uma segunda fila CUPS com driver ZPL para uso no Chromium.
+    A fila raw (ZD220) é usada pelo printer_server para etiquetas.
+    Esta fila (ZD220_Print) é usada pelo Chromium para impressão via browser.
+    """
+    log(f"Cadastrando fila Chromium '{nome}' no CUPS: {uri}")
+    for cmd in [
+        ["lpadmin", "-p", nome, "-E", "-v", uri, "-m", "drv:///sample.drv/zebra.ppd"],
+        ["cupsenable", nome],
+        ["cupsaccept", nome],
+    ]:
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            log(f"  {' '.join(cmd)}: {r.stdout.strip() or r.stderr.strip() or 'OK'}")
+        except Exception as e:
+            log(f"  ERRO {' '.join(cmd)}: {e}")
+    time.sleep(2)
+
+
 def aguardar_printer_server():
     """Aguarda o app printer_server subir (qualquer resposta HTTP na porta 2525)."""
     url = f"http://localhost:{PRINTER_SERVER_PORT}/health"
@@ -503,6 +547,8 @@ def loop_monitoramento(mac, nome_mesa, fc_id, kdabra_url, printer_server_ativo=T
                 uri = detectar_zebra_usb()
                 if uri and not impressora_cadastrada_cups("ZD220"):
                     cadastrar_impressora_cups(uri, "ZD220")
+                if uri and not impressora_cadastrada_cups("ZD220_Print"):
+                    cadastrar_impressora_cups_print(uri, "ZD220_Print")
                 if aguardar_printer_server():
                     aplicar_config(nome_mesa, fc_id, kdabra_url)
                 printer_server_ativo = True
@@ -582,7 +628,14 @@ def main():
         else:
             log("AVISO: Nenhuma Zebra encontrada. Monitoramento vai cadastrar ao conectar.")
     else:
-        log("Impressora já cadastrada no CUPS.")
+        log("Impressora ZD220 já cadastrada no CUPS.")
+
+    if not impressora_cadastrada_cups("ZD220_Print"):
+        uri = detectar_zebra_usb()
+        if uri:
+            cadastrar_impressora_cups_print(uri, "ZD220_Print")
+    else:
+        log("Impressora ZD220_Print já cadastrada no CUPS.")
 
     if not aguardar_printer_server():
         log("ERRO: printer_server indisponível.")

@@ -189,6 +189,11 @@ sed -i 's|require("@ifood/thermal-printer")|require("./thermal")|g' "$INSTALL_DI
 sed -i 's|require("../../../package.json")|require("./package.json")|g' "$INSTALL_DIR/server.js"
 echo 'startLocalPrinterServer();' >> "$INSTALL_DIR/server.js"
 
+# Patch: adiciona header Access-Control-Allow-Private-Network
+# Necessário para o portal iFood (HTTPS) conseguir acessar o servidor local (HTTP)
+# Sem isso, o Chromium bloqueia a conexão e o portal mostra "Extensão fechada"
+sed -i 's/app\.use(import_express\.default\.json());/app.use(import_express.default.json());\napp.use((req, res, next) => {\n  res.setHeader("Access-Control-Allow-Private-Network", "true");\n  if (req.method === "OPTIONS") { res.status(204).end(); return; }\n  next();\n});/' "$INSTALL_DIR/server.js"
+
 # printer-shim.js — adapter entre node-printer (Linux) e API esperada pelo iFood
 cat > "$INSTALL_DIR/printer-shim.js" << 'EOF'
 const nodePrinter = require('node-printer');

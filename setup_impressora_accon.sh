@@ -31,9 +31,30 @@ echo ""
 # ─── [1] Verificar QZ Tray ────────────────────────────────
 step 1 "Verificando QZ Tray..."
 if [ ! -f "$QZ_DIR/qz-tray" ]; then
-    err "QZ Tray não encontrado em $QZ_DIR\n  Instale primeiro via: https://qz.io/download"
+    warn "QZ Tray não encontrado em $QZ_DIR — instalando automaticamente..."
+    QZ_VERSION="2.2.6"
+    ARCH=$(uname -m)
+    if [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
+        QZ_FILE="qz-tray-${QZ_VERSION}-arm64.run"
+    elif [ "$ARCH" = "x86_64" ]; then
+        QZ_FILE="qz-tray-${QZ_VERSION}-x86_64.run"
+    else
+        err "Arquitetura não suportada: $ARCH"
+    fi
+    QZ_URL="https://github.com/qzind/tray/releases/download/v${QZ_VERSION}/${QZ_FILE}"
+    info "Baixando $QZ_FILE (~108 MB)..."
+    wget -q --show-progress "$QZ_URL" -O "/tmp/$QZ_FILE" || err "Falha ao baixar QZ Tray de $QZ_URL"
+    chmod +x "/tmp/$QZ_FILE"
+    info "Instalando em $QZ_DIR..."
+    "/tmp/$QZ_FILE" -- --prefix "$QZ_DIR" --confirm-command install || err "Falha na instalação do QZ Tray"
+    rm -f "/tmp/$QZ_FILE"
+    if [ ! -f "$QZ_DIR/qz-tray" ]; then
+        err "Instalação do QZ Tray falhou — binário não encontrado em $QZ_DIR"
+    fi
+    ok "QZ Tray instalado em $QZ_DIR"
+else
+    ok "QZ Tray encontrado em $QZ_DIR"
 fi
-ok "QZ Tray encontrado em $QZ_DIR"
 
 # ─── [2] Dependências do sistema ──────────────────────────
 step 2 "Instalando dependências..."
